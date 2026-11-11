@@ -39,6 +39,28 @@ public class Api {
         return o.toString("UTF-8");
     }
 
+    /** Todos los recordatorios del servidor, o null si no hay sesión o falla la conexión. */
+    static JSONArray listar(Context c) {
+        try {
+            HttpURLConnection h = abrir(c, "/api/recordatorios?desde=0", "GET");
+            if (h.getResponseCode() != 200) return null;
+            return new JSONObject(leer(h.getInputStream())).getJSONArray("items");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Abre la conexión de avisos en vivo del servidor. */
+    static HttpURLConnection eventos(Context c) throws Exception {
+        String base = Alarmas.prefs(c).getString("base", "");
+        String token = Alarmas.prefs(c).getString("token", "");
+        if (base.isEmpty() || token.isEmpty()) throw new Exception("sin sesion");
+        HttpURLConnection h = (HttpURLConnection) new URL(base + "/api/eventos?token=" + java.net.URLEncoder.encode(token, "UTF-8")).openConnection();
+        h.setConnectTimeout(10000);
+        h.setReadTimeout(75000); // el servidor envía un latido cada 25 s
+        return h;
+    }
+
     /** Busca un recordatorio en el servidor. */
     static Resultado buscar(Context c, String id) {
         Resultado r = new Resultado();

@@ -57,10 +57,13 @@ public class AlarmasPlugin extends Plugin {
     /** Guarda la sesión para que la pantalla de alerta pueda hablar con el servidor aunque la app esté cerrada. */
     @PluginMethod
     public void sesion(PluginCall call) {
+        String token = call.getString("token", "");
         Alarmas.prefs(getContext()).edit()
-                .putString("token", call.getString("token", ""))
+                .putString("token", token)
                 .putString("base", call.getString("base", ""))
                 .apply();
+        // Con sesión iniciada, el servicio mantiene las alarmas al día aunque la app esté cerrada
+        if (token.isEmpty()) SyncService.detener(getContext()); else SyncService.iniciar(getContext());
         call.resolve();
     }
 

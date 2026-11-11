@@ -81,6 +81,53 @@ public class Alarmas {
         return cal.getTimeInMillis();
     }
 
+    /** Cancela todas las alarmas guardadas y programa las nuevas (la lista completa manda). */
+    static synchronized void reemplazarTodas(Context c, JSONArray nuevas) {
+        try {
+            JSONArray viejas = leer(c, K_ALARMAS);
+            for (int i = 0; i < viejas.length(); i++) {
+                JSONObject o = viejas.getJSONObject(i);
+                cancelar(c, o, claveDe(o));
+            }
+            for (int i = 0; i < nuevas.length(); i++) {
+                JSONObject o = nuevas.getJSONObject(i);
+                programar(c, o, claveDe(o));
+            }
+            guardar(c, K_ALARMAS, nuevas);
+        } catch (JSONException ignored) {}
+    }
+
+    /** Convierte los recordatorios del servidor en la lista de alarmas que hay que programar. */
+    static JSONArray alarmasDesdeItems(JSONArray items) {
+        long ahora = System.currentTimeMillis();
+        java.util.List<JSONObject> lista = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < items.length(); i++) {
+                JSONObject it = items.getJSONObject(i);
+                if (it.optBoolean("deleted") || it.optBoolean("done")) continue;
+                String id = it.optString("id"), rep = it.optString("repeat", "none");
+                long due = it.optLong("due"), snz = it.optLong("snooze");
+                long d = (!"none".equals(rep) && due <= ahora) ? siguiente(due, rep) : due;
+                if (d > ahora) {
+                    JSONObject o = new JSONObject();
+                    o.put("id", id); o.put("title", it.optString("title")); o.put("note", it.optString("note"));
+                    o.put("repeat", rep); o.put("due", d); o.put("clave", id);
+                    lista.add(o);
+                }
+                if (snz > ahora) {
+                    JSONObject o = new JSONObject();
+                    o.put("id", id); o.put("title", it.optString("title")); o.put("note", it.optString("note"));
+                    o.put("repeat", "none"); o.put("due", snz); o.put("clave", id + "#p");
+                    lista.add(o);
+                }
+            }
+        } catch (JSONException ignored) {}
+        java.util.Collections.sort(lista, (a, b) -> Long.compare(a.optLong("due"), b.optLong("due")));
+        JSONArray r = new JSONArray();
+        for (int i = 0; i < lista.size() && i < 80; i++) r.put(lista.get(i));
+        return r;
+    }
+
     /** Nombre único de la alarma: el id del recordatorio, o id#p si es una pospuesta. */
     static String claveDe(JSONObject o) {
         return o.optString("clave", o.optString("id"));
