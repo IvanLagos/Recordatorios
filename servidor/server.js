@@ -102,13 +102,27 @@ app.use(express.json({ limit: '100kb' }));
       updatedAt: Date.now(),
     };
     if (!item.deleted && (!item.title || !item.due)) return res.status(400).json({ error: 'Falta título o fecha.' });
+    // "ack" y "notif" los maneja solo el servidor (confirmaciones y avisos de respaldo)
+    const previo = await store.obtener(req.user.uid, id);
+    item.ack = previo ? previo.ack || 0 : 0;
+    item.notif = previo ? previo.notif || 0 : 0;
     await store.guardar(req.user.uid, item);
     avisar(req.user.uid, req.get('x-cliente'));
     res.json(item);
   });
 
+  // Un aparato confirma que mostró la alerta de las "t" horas: así el servidor no manda el aviso de respaldo.
+  app.post('/api/avisado/:id', auth, async (req, res) => {
+    const it = await store.obtener(req.user.uid, String(req.params.id));
+    if (!it) return res.status(404).json({ error: 'No existe.' });
+    it.ack = Math.max(it.ack || 0, Number((req.body || {}).t) || 0);
+    await store.guardar(req.user.uid, it); // no cambia updatedAt: los demás aparatos no necesitan sincronizar
+    res.json({ ok: true });
+  });
+
   // La app web (se sirve desde la carpeta public)
   app.use(express.static(path.join(__dirname, 'public')));
 
+  require('./avisos').iniciar(store);
   app.listen(PORT, () => console.log('Recordatorios en http://localhost:' + PORT));
 })().catch(e => { console.error(e); process.exit(1); });

@@ -26,6 +26,15 @@ public class AlarmReceiver extends BroadcastReceiver {
 
         Alarmas.mostrar(c, id, title == null ? "Recordatorio" : title, note == null ? "" : note, due, repeat);
 
+        // Confirma al servidor que este celular mostró la alerta (evita el aviso de respaldo)
+        final Context app = c.getApplicationContext();
+        final String fid = id;
+        final long fdue = due;
+        final PendingResult pr = goAsync();
+        new Thread(() -> { Api.avisar(app, fid, fdue); pr.finish(); }).start();
+        // Una alarma que suena es buen momento para asegurar que el servicio de sincronización siga vivo
+        if (!Alarmas.prefs(c).getString("token", "").isEmpty()) SyncService.iniciar(c);
+
         // Los repetitivos programan solos su siguiente fecha
         if (!"none".equals(repeat)) {
             try {

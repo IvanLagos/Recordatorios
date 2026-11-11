@@ -380,7 +380,13 @@ function revisarAlertas(){
     if(!it||it.deleted||it.done||effT(it)>Date.now()+2000){delete alertados[id];electronAPI.cancelarAlerta(id)}
   }
 }
+// Le dice al servidor que este aparato mostró la alerta (así no manda el aviso de respaldo)
+function avisar(i){
+  if(!token)return;
+  api('/api/avisado/'+i.id,{method:'POST',body:JSON.stringify({t:effT(i)})}).catch(()=>{});
+}
 async function notify(i){
+  avisar(i);
   // En la app de Windows la alerta se abre al frente de todo (con su propio sonido)
   if(window.electronAPI){alertados[i.id]=effT(i);electronAPI.alerta({id:i.id,title:i.title,note:i.note,due:effT(i)});return}
   if(NATIVE)return; // en el celular avisa la alarma del sistema (pantalla completa)

@@ -24,6 +24,6 @@ public class BootReceiver extends BroadcastReceiver {
             Alarmas.guardar(c, Alarmas.K_ALARMAS, lista);
         } catch (Exception ignored) {}
         // Vuelve a levantar el servicio de sincronización si hay sesión iniciada
-        if (!Alarmas.prefs(c).getString("token", "").isEmpty()) SyncService.iniciar(c);
+        if (!Alarmas.prefs(c).getString("token", "").isEmpty()) { SyncService.iniciar(c); WatchdogJob.programar(c); }
     }
 }

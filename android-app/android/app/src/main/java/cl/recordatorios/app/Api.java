@@ -77,6 +77,19 @@ public class Api {
         return r;
     }
 
+    /** Confirma al servidor que este celular mostró la alerta de las "t" horas. */
+    static void avisar(Context c, String id, long t) {
+        try {
+            HttpURLConnection h = abrir(c, "/api/avisado/" + java.net.URLEncoder.encode(id, "UTF-8"), "POST");
+            h.setRequestProperty("Content-Type", "application/json");
+            h.setDoOutput(true);
+            OutputStream os = h.getOutputStream();
+            os.write(("{\"t\":" + t + "}").getBytes("UTF-8"));
+            os.close();
+            h.getResponseCode();
+        } catch (Exception ignored) {}
+    }
+
     /** Guarda el recordatorio modificado. */
     static boolean guardar(Context c, JSONObject item) {
         try {

@@ -44,6 +44,11 @@
                 android:value="Mantiene los recordatorios sincronizados con el servidor para avisar a tiempo" />
         </service>
 
+        <service
+            android:name=".WatchdogJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <receiver android:name=".AlarmReceiver" android:exported="false" />
 
         <receiver android:name=".BootReceiver" android:exported="true">

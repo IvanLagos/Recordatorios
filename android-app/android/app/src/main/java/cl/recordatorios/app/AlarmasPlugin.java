@@ -63,7 +63,8 @@ public class AlarmasPlugin extends Plugin {
                 .putString("base", call.getString("base", ""))
                 .apply();
         // Con sesión iniciada, el servicio mantiene las alarmas al día aunque la app esté cerrada
-        if (token.isEmpty()) SyncService.detener(getContext()); else SyncService.iniciar(getContext());
+        if (token.isEmpty()) { SyncService.detener(getContext()); WatchdogJob.cancelar(getContext()); }
+        else { SyncService.iniciar(getContext()); WatchdogJob.programar(getContext()); }
         call.resolve();
     }
 

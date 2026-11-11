@@ -81,6 +81,49 @@ public class Alarmas {
         return cal.getTimeInMillis();
     }
 
+    static void marcarSync(Context c) {
+        prefs(c).edit().putLong("ultimaSync", System.currentTimeMillis()).apply();
+    }
+
+    /**
+     * Si algo puede hacer que los avisos fallen (permisos, batería, sin conexión hace horas),
+     * lo avisa con una notificación. Como mucho una vez cada 12 horas.
+     */
+    static void avisarProblemas(Context c) {
+        StringBuilder sb = new StringBuilder();
+        if (Build.VERSION.SDK_INT >= 33
+                && c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            sb.append("Faltan permisos de notificaciones. ");
+        android.os.PowerManager pm = (android.os.PowerManager) c.getSystemService(Context.POWER_SERVICE);
+        if (!pm.isIgnoringBatteryOptimizations(c.getPackageName()))
+            sb.append("La batería puede cerrar la app: quita su restricción. ");
+        if (Build.VERSION.SDK_INT >= 34 && !c.getSystemService(NotificationManager.class).canUseFullScreenIntent())
+            sb.append("Falta el permiso de pantalla completa. ");
+        long ult = prefs(c).getLong("ultimaSync", 0);
+        if (ult > 0 && System.currentTimeMillis() - ult > 2 * 3600000L)
+            sb.append("Sin conexión con el servidor desde hace " + ((System.currentTimeMillis() - ult) / 3600000L)
+                    + " h: los recordatorios nuevos no llegarán. ");
+        if (sb.length() == 0) return;
+        if (System.currentTimeMillis() - prefs(c).getLong("ultimoAviso", 0) < 12 * 3600000L) return;
+        prefs(c).edit().putLong("ultimoAviso", System.currentTimeMillis()).apply();
+
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationManager nm = c.getSystemService(NotificationManager.class);
+            if (nm.getNotificationChannel("problemas_v1") == null)
+                nm.createNotificationChannel(new NotificationChannel("problemas_v1", "Problemas con los avisos", NotificationManager.IMPORTANCE_HIGH));
+        }
+        PendingIntent abrir = PendingIntent.getActivity(c, 7, new Intent(c, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder b = new NotificationCompat.Builder(c, "problemas_v1")
+                .setSmallIcon(android.R.drawable.stat_sys_warning)
+                .setContentTitle("Recordatorios: tus avisos pueden fallar")
+                .setContentText(sb.toString().trim())
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(sb.toString().trim()))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(abrir)
+                .setAutoCancel(true);
+        try { NotificationManagerCompat.from(c).notify(9001, b.build()); } catch (SecurityException ignored) {}
+    }
+
     /** Cancela todas las alarmas guardadas y programa las nuevas (la lista completa manda). */
     static synchronized void reemplazarTodas(Context c, JSONArray nuevas) {
         try {

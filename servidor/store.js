@@ -37,6 +37,19 @@ async function crearPg() {
       const r = await pool.query('SELECT datos FROM recordatorios WHERE usuario_id=$1 AND actualizado>$2', [uid, desde]);
       return r.rows.map(x => x.datos);
     },
+    async obtener(uid, id) {
+      const r = await pool.query('SELECT datos FROM recordatorios WHERE id=$1 AND usuario_id=$2', [id, uid]);
+      return r.rows[0] ? r.rows[0].datos : null;
+    },
+    async pendientes() {
+      const r = await pool.query(`SELECT usuario_id, datos FROM recordatorios
+        WHERE datos->>'done' <> 'true' AND datos->>'deleted' <> 'true'`);
+      return r.rows.map(x => ({ uid: x.usuario_id, item: x.datos }));
+    },
+    async emailDe(uid) {
+      const r = await pool.query('SELECT email FROM usuarios WHERE id=$1', [uid]);
+      return r.rows[0] ? r.rows[0].email : null;
+    },
   };
 }
 
@@ -59,6 +72,14 @@ function crearArchivo() {
     },
     async guardar(uid, item) { (db.items[uid] ??= {})[item.id] = item; volcar(); },
     async listar(uid, desde) { return Object.values(db.items[uid] || {}).filter(i => i.updatedAt > desde); },
+    async obtener(uid, id) { return (db.items[uid] || {})[id] || null; },
+    async pendientes() {
+      const r = [];
+      for (const uid of Object.keys(db.items))
+        for (const item of Object.values(db.items[uid])) if (!item.done && !item.deleted) r.push({ uid: Number(uid), item });
+      return r;
+    },
+    async emailDe(uid) { const u = db.usuarios.find(x => x.id === Number(uid)); return u ? u.email : null; },
   };
 }
 

@@ -92,7 +92,10 @@ public class SyncService extends Service {
 
     private void sincronizar() {
         JSONArray items = Api.listar(this);
-        if (items != null) Alarmas.reemplazarTodas(this, Alarmas.alarmasDesdeItems(items));
+        if (items != null) {
+            Alarmas.reemplazarTodas(this, Alarmas.alarmasDesdeItems(items));
+            Alarmas.marcarSync(this);
+        }
     }
 
     /** Se queda leyendo los avisos del servidor; cada cambio dispara una sincronización. */
