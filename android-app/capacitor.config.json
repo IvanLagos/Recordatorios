@@ -1,0 +1,6 @@
+{
+  "appId": "cl.recordatorios.app",
+  "appName": "Recordatorios",
+  "webDir": "www",
+  "android": { "backgroundColor": "#10131a" }
+}

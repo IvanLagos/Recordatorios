@@ -13,6 +13,18 @@ app.use(express.json({ limit: '100kb' }));
   const store = await abrirStore();
   const SECRETO = process.env.JWT_SECRET || (await store.secreto());
 
+  // La app de Android carga la página desde el propio celular y llama a esta API:
+  // se permite porque la autenticación va por token (Bearer), no por cookies.
+  app.use('/api', (req, res, next) => {
+    res.set({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Authorization, Content-Type, x-cliente',
+      'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
+    });
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
   // --- Límite simple de intentos de login por IP ---
   const intentos = new Map();
   const bloqueado = ip => (intentos.get(ip) || []).filter(t => Date.now() - t < 15 * 60000).length >= 10;

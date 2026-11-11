@@ -78,6 +78,19 @@
     <span class="top"><span id="st"></span><button class="sec sm" id="perm" hidden>Activar avisos</button><button class="sec sm" id="out">Salir</button></span>
   </h1>
 
+  <div class="card" id="nat" hidden>
+    <b>Avisos del celular</b>
+    <div class="m" id="natEst" style="margin:6px 0 10px"></div>
+    <div class="actions" style="flex-wrap:wrap">
+      <button class="sm" id="natNotif" hidden>Permitir notificaciones</button>
+      <button class="sm" id="natBat" hidden>Quitar límite de batería</button>
+      <button class="sm" id="natPant" hidden>Permitir pantalla completa</button>
+      <button class="sec sm" id="natProbar">Probar alarma</button>
+      <button class="sec sm" id="natAjustes">Ajustes de la app</button>
+    </div>
+    <div class="m" id="natAyuda" style="margin-top:10px" hidden>En Honor/Magic OS además: Ajustes → Batería → Inicio de aplicaciones → Recordatorios → «Gestionar manualmente» y activa las tres opciones (inicio automático, inicio secundario y ejecución en segundo plano).</div>
+  </div>
+
   <div class="card">
     <div class="cal-h">
       <b id="calTitle"></b>
@@ -124,6 +137,11 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
 const jget=(k,d)=>{try{return JSON.parse(ls.get(k))??d}catch(e){return d}};
 
+// ---------- Android (app nativa con alarmas) ----------
+const NATIVE=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
+const BASE=NATIVE?((()=>{try{return localStorage.getItem('rec.base')}catch(e){return null}})()||'https://recordatorios-4ita.onrender.com'):'';
+const Alarmas=NATIVE?Capacitor.Plugins.Alarmas:null;
+
 // ---------- Estado ----------
 let items=jget('rec.items',[]);          // incluye borrados pendientes de sincronizar
 let fired=jget('rec.fired',{});           // avisos ya mostrados EN ESTE aparato: {id: due}
@@ -153,13 +171,62 @@ function nextDue(ts,rep){
 
 // ---------- Servidor ----------
 async function api(path,opts={}){
-  const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','x-cliente':CID,...(token?{Authorization:'Bearer '+token}:{}),...opts.headers}});
+  const r=await fetch(BASE+path,{...opts,headers:{'Content-Type':'application/json','x-cliente':CID,...(token?{Authorization:'Bearer '+token}:{}),...opts.headers}});
   if(r.status===401&&token&&!path.includes('/login')){logout();throw new Error('sesion');}
   return r;
 }
 function estado(t){$('st').textContent=t}
 
-function touch(i){i.updatedAt=Date.now();i.dirty=true;save();sync()}
+function touch(i){i.updatedAt=Date.now();i.dirty=true;save();sync();programarNativo()}
+
+// En el celular, cada recordatorio pendiente se programa como alarma del sistema
+let progT=null;
+function programarNativo(){
+  if(!NATIVE)return;
+  clearTimeout(progT);
+  progT=setTimeout(()=>{
+    const alarmas=live().filter(i=>!i.done).map(i=>({
+      id:i.id,title:i.title,note:i.note||'',repeat:i.repeat,
+      due:(i.repeat!=='none'&&i.due<=Date.now())?nextDue(i.due,i.repeat):i.due
+    })).filter(a=>a.due>Date.now()).sort((a,b)=>a.due-b.due).slice(0,60);
+    Alarmas.programar({alarmas}).catch(()=>{});
+  },300);
+}
+// Lo que elegiste (Hecho / Posponer) en la pantalla de alerta con la app cerrada
+async function aplicarAcciones(){
+  if(!NATIVE)return;
+  try{
+    const l=(await Alarmas.acciones()).acciones||[];
+    if(!l.length)return;
+    for(const a of l){
+      const it=items.find(i=>i.id===a.id);if(!it)continue;
+      if(a.tipo==='hecho'){if(it.repeat!=='none')it.due=nextDue(it.due,it.repeat);else it.done=true}
+      else if(a.tipo==='posponer'&&it.repeat==='none')it.due=a.due;
+      touch(it);
+    }
+    await Alarmas.limpiarAcciones();render();
+  }catch(e){}
+}
+// Panel "Avisos del celular": permisos que necesita Android para avisar bien
+async function estadoNativo(){
+  if(!NATIVE)return;
+  $('nat').hidden=false;
+  try{
+    const e=await Alarmas.estado();
+    $('natNotif').hidden=e.notificaciones;
+    $('natBat').hidden=e.bateria;
+    $('natPant').hidden=e.pantallaCompleta;
+    const ok=e.notificaciones&&e.bateria&&e.pantallaCompleta;
+    $('natEst').textContent=ok?'✓ Permisos listos. Los avisos funcionan aunque la app esté cerrada.':'Faltan permisos para que los avisos funcionen con la app cerrada:';
+    $('natAyuda').hidden=ok;
+  }catch(err){}
+}
+const natPaso=p=>async()=>{try{await Alarmas.configurar({paso:p})}catch(e){} setTimeout(estadoNativo,1500)};
+$('natNotif').onclick=natPaso('notificaciones');
+$('natBat').onclick=natPaso('bateria');
+$('natPant').onclick=natPaso('pantalla');
+$('natAjustes').onclick=natPaso('ajustes');
+$('natProbar').onclick=async()=>{try{await Alarmas.probar({segundos:8});toast('La alarma de prueba sonará en 8 segundos. Puedes bloquear el celular.')}catch(e){}};
 
 async function sync(){
   if(!token)return;
@@ -189,6 +256,7 @@ async function sync(){
     if(primera)for(const i of live())if(!i.done&&i.due<=Date.now())fired[i.id]=i.due;
     ls.set('rec.since',String(since));ls.set('rec.synced','1');saveFired();save();
     estado('● sincronizado');
+    programarNativo();
   }catch(e){if(e.message!=='sesion')estado('○ sin conexión')}
   syncing=false;
   if(again){again=false;sync()}else check();
@@ -196,7 +264,7 @@ async function sync(){
 
 function conectarEventos(){
   if(es)es.close();
-  es=new EventSource('/api/eventos?token='+encodeURIComponent(token));
+  es=new EventSource(BASE+'/api/eventos?token='+encodeURIComponent(token));
   es.onmessage=e=>{if(e.data!==CID)sync()};
   es.onerror=()=>estado('○ sin conexión');
   es.onopen=()=>sync();
@@ -208,6 +276,7 @@ function mostrarLogin(){$('login').hidden=false;$('app').hidden=true}
 function iniciar(){
   $('login').hidden=true;$('app').hidden=false;
   resetForm();render();sync();conectarEventos();
+  programarNativo();aplicarAcciones();estadoNativo();
 }
 function logout(){
   token=null;ls.del('rec.token');ls.del('rec.since');ls.del('rec.synced');ls.del('rec.items');ls.del('rec.fired');
@@ -223,7 +292,7 @@ $('lmode').onclick=()=>{
 $('lf').addEventListener('submit',async e=>{
   e.preventDefault();$('loginErr').textContent='';
   try{
-    const r=await fetch(modoRegistro?'/api/registro':'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('em').value,password:$('pw').value})});
+    const r=await fetch(BASE+(modoRegistro?'/api/registro':'/api/login'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('em').value,password:$('pw').value})});
     const d=await r.json();
     if(!r.ok){$('loginErr').textContent=d.error||'Error';return}
     token=d.token;ls.set('rec.token',token);$('pw').value='';iniciar();
@@ -286,6 +355,7 @@ function beep(){
 async function notify(i){
   // En la app de Windows la alerta se abre al frente de todo (con su propio sonido)
   if(window.electronAPI){electronAPI.alerta({id:i.id,title:i.title,note:i.note,due:i.due});return}
+  if(NATIVE)return; // en el celular avisa la alarma del sistema (pantalla completa)
   toast('🔔 '+i.title);beep();
   if('Notification' in window&&Notification.permission==='granted'){
     const opts={body:i.note||fmt(i.due),icon:'icon.svg',tag:i.id,requireInteraction:true};
@@ -370,16 +440,16 @@ if(window.electronAPI)electronAPI.onAccion(({id,tipo})=>{
 });
 
 // ---------- Permiso de notificaciones ----------
-function permUI(){$('perm').hidden=!('Notification' in window)||Notification.permission!=='default'}
+function permUI(){$('perm').hidden=NATIVE||!('Notification' in window)||Notification.permission!=='default'}
 $('perm').onclick=async()=>{await Notification.requestPermission();permUI()};
 permUI();
 
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&!NATIVE)navigator.serviceWorker.register('sw.js').catch(()=>{});
 
 // ---------- Arranque ----------
 if(token)iniciar();else mostrarLogin();
 setInterval(()=>{check();if(token&&!document.hidden)sync()},10000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){check();sync()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){check();sync();aplicarAcciones();estadoNativo()}});
 </script>
 </body>
 </html>
