@@ -1,6 +1,7 @@
 package cl.recordatorios.app;
 
 import android.app.Activity;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -36,6 +37,8 @@ public class AlarmaActivity extends Activity {
     private String id, title, note, repeat;
     private long due;
     private final Handler h = new Handler(Looper.getMainLooper());
+    private volatile boolean cerrando = false;
+    private Runnable sondeo;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -51,6 +54,7 @@ public class AlarmaActivity extends Activity {
         sonar();
         // Deja de sonar a los 2 minutos para no gastar batería si no estás cerca
         h.postDelayed(this::silenciar, 120000);
+        iniciarSondeo();
     }
 
     @Override
@@ -145,31 +149,114 @@ public class AlarmaActivity extends Activity {
         setContentView(raiz);
     }
 
+    /** Hecho: se guarda en el servidor al instante, así los demás aparatos también lo ven y cierran su alerta. */
     private void hecho() {
-        Alarmas.agregarAccion(this, id, "hecho", 0);
+        cerrando = true;
+        final Context app = getApplicationContext();
+        final String fid = id;
+        Alarmas.cancelarClave(app, fid + "#p");
+        if ("none".equals(repeat)) Alarmas.cancelarClave(app, fid);
+        new Thread(() -> {
+            boolean ok = false;
+            Api.Resultado r = Api.buscar(app, fid);
+            if (r.ok && r.item != null) {
+                try {
+                    JSONObject it = r.item;
+                    String rep = it.optString("repeat", "none");
+                    if ("none".equals(rep)) it.put("done", true);
+                    else it.put("due", Alarmas.siguiente(it.optLong("due"), rep));
+                    it.put("snooze", 0);
+                    ok = Api.guardar(app, it);
+                } catch (Exception ignored) {}
+            }
+            // Sin conexión: queda guardado y se aplica cuando abras la app
+            if (!ok) Alarmas.agregarAccion(app, fid, "hecho", 0);
+        }).start();
         finish();
     }
 
+    /** Posponer: vuelve a sonar en 10 minutos en este y en los demás aparatos. */
     private void posponer() {
-        long nueva = System.currentTimeMillis() + 10 * 60000L;
+        cerrando = true;
+        final Context app = getApplicationContext();
+        final String fid = id;
+        final long nueva = System.currentTimeMillis() + 10 * 60000L;
         try {
             JSONObject o = new JSONObject();
-            o.put("id", id);
+            o.put("id", fid);
             o.put("title", title);
             o.put("note", note);
             o.put("due", nueva);
-            if ("none".equals(repeat)) {
-                // Recordatorio único: la misma alarma se mueve 10 minutos
-                o.put("repeat", "none");
-                Alarmas.programar(this, o, id);
-                Alarmas.actualizarDue(this, id, nueva);
-            } else {
-                // Repetitivo: una alarma aparte, sin tocar su calendario normal
-                o.put("repeat", "none");
-                Alarmas.programar(this, o, id + "#p");
+            o.put("repeat", "none");
+            Alarmas.programar(app, o, fid + "#p");
+            Alarmas.ponerEnPrefs(app, o, fid + "#p");
+        } catch (Exception ignored) {}
+        new Thread(() -> {
+            boolean ok = false;
+            Api.Resultado r = Api.buscar(app, fid);
+            if (r.ok && r.item != null) {
+                try {
+                    r.item.put("snooze", nueva);
+                    ok = Api.guardar(app, r.item);
+                } catch (Exception ignored) {}
+            }
+            if (!ok) Alarmas.agregarAccion(app, fid, "posponer", nueva);
+        }).start();
+        finish();
+    }
+
+    /** Mientras suena, revisa cada pocos segundos si en otro aparato ya la atendieron. */
+    private void iniciarSondeo() {
+        if ("prueba".equals(id)) return;
+        final Context app = getApplicationContext();
+        sondeo = new Runnable() {
+            @Override
+            public void run() {
+                if (cerrando) return;
+                final String fid = id;
+                new Thread(() -> {
+                    final Api.Resultado r = Api.buscar(app, fid);
+                    h.post(() -> { if (r.ok) evaluar(r.item); });
+                }).start();
+                h.postDelayed(this, 4000);
+            }
+        };
+        h.postDelayed(sondeo, 1500);
+    }
+
+    private void evaluar(JSONObject it) {
+        if (cerrando) return;
+        final Context app = getApplicationContext();
+        try {
+            if (it == null || it.optBoolean("deleted") || it.optBoolean("done")) {
+                // Ya lo marcaron como hecho (o lo borraron) en otro aparato
+                Alarmas.cancelarClave(app, id + "#p");
+                if (it == null || it.optBoolean("deleted") || "none".equals(it.optString("repeat", "none")))
+                    Alarmas.cancelarClave(app, id);
+                cerrarPorRemoto();
+                return;
+            }
+            long due = it.optLong("due"), snz = it.optLong("snooze");
+            long proxima = Math.max(due, snz);
+            if (proxima > System.currentTimeMillis() + 2000) {
+                // Lo pospusieron o lo cambiaron en otro aparato: aquí vuelve a sonar a esa hora
+                JSONObject o = new JSONObject();
+                o.put("id", id);
+                o.put("title", it.optString("title", title));
+                o.put("note", it.optString("note", note));
+                o.put("due", proxima);
+                String clave;
+                if (snz > due) { o.put("repeat", "none"); clave = id + "#p"; }
+                else { o.put("repeat", it.optString("repeat", "none")); clave = id; }
+                Alarmas.programar(app, o, clave);
+                Alarmas.ponerEnPrefs(app, o, clave);
+                cerrarPorRemoto();
             }
         } catch (Exception ignored) {}
-        Alarmas.agregarAccion(this, id, "posponer", nueva);
+    }
+
+    private void cerrarPorRemoto() {
+        cerrando = true;
         finish();
     }
 
@@ -200,6 +287,7 @@ public class AlarmaActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        cerrando = true;
         h.removeCallbacksAndMessages(null);
         silenciar();
         super.onDestroy();

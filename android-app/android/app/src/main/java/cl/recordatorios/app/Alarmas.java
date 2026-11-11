@@ -81,6 +81,38 @@ public class Alarmas {
         return cal.getTimeInMillis();
     }
 
+    /** Nombre único de la alarma: el id del recordatorio, o id#p si es una pospuesta. */
+    static String claveDe(JSONObject o) {
+        return o.optString("clave", o.optString("id"));
+    }
+
+    /** Guarda (o reemplaza) la alarma en la copia local, para reprogramarla tras reiniciar el celular. */
+    static void ponerEnPrefs(Context c, JSONObject o, String clave) {
+        try {
+            o.put("clave", clave);
+            JSONArray viejas = leer(c, K_ALARMAS), nuevas = new JSONArray();
+            for (int i = 0; i < viejas.length(); i++) {
+                JSONObject x = viejas.getJSONObject(i);
+                if (!claveDe(x).equals(clave)) nuevas.put(x);
+            }
+            nuevas.put(o);
+            guardar(c, K_ALARMAS, nuevas);
+        } catch (JSONException ignored) {}
+    }
+
+    /** Cancela una alarma y la saca de la copia local. */
+    static void cancelarClave(Context c, String clave) {
+        cancelar(c, new JSONObject(), clave);
+        try {
+            JSONArray viejas = leer(c, K_ALARMAS), nuevas = new JSONArray();
+            for (int i = 0; i < viejas.length(); i++) {
+                JSONObject x = viejas.getJSONObject(i);
+                if (!claveDe(x).equals(clave)) nuevas.put(x);
+            }
+            guardar(c, K_ALARMAS, nuevas);
+        } catch (JSONException ignored) {}
+    }
+
     static void agregarAccion(Context c, String id, String tipo, long due) {
         try {
             JSONArray lista = leer(c, K_ACCIONES);
@@ -99,7 +131,7 @@ public class Alarmas {
             JSONArray lista = leer(c, K_ALARMAS);
             for (int i = 0; i < lista.length(); i++) {
                 JSONObject o = lista.getJSONObject(i);
-                if (id.equals(o.optString("id"))) { o.put("due", due); }
+                if (id.equals(o.optString("id")) && id.equals(claveDe(o))) { o.put("due", due); }
             }
             guardar(c, K_ALARMAS, lista);
         } catch (JSONException ignored) {}

@@ -69,6 +69,13 @@ ipcMain.on('alerta', (_e, a) => {
   abrirAlerta();
 });
 ipcMain.on('alerta-lista', e => e.sender.send('lista', cola));
+ipcMain.on('alerta-cancelar', (_e, id) => {
+  const i = cola.findIndex(x => x.id === id);
+  if (i < 0) return;
+  cola.splice(i, 1);
+  if (!ventanaAlerta || ventanaAlerta.isDestroyed()) return;
+  if (!cola.length) ventanaAlerta.close(); else ventanaAlerta.webContents.send('lista', cola);
+});
 ipcMain.on('accion', (_e, a) => {
   if (!a || !a.id) return;
   const i = cola.findIndex(x => x.id === a.id);

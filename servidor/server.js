@@ -97,6 +97,7 @@ app.use(express.json({ limit: '100kb' }));
       repeat: ['none', 'daily', 'weekly', 'monthly'].includes(b.repeat) ? b.repeat : 'none',
       done: !!b.done,
       fired: !!b.fired,
+      snooze: Number(b.snooze) || 0, // hora hasta la que está pospuesto (0 = no pospuesto)
       deleted: !!b.deleted,
       updatedAt: Date.now(),
     };

@@ -19,7 +19,7 @@ public class BootReceiver extends BroadcastReceiver {
                 if (o.optLong("due") <= System.currentTimeMillis() && !"none".equals(repeat)) {
                     o.put("due", Alarmas.siguiente(o.optLong("due"), repeat));
                 }
-                Alarmas.programar(c, o, o.optString("id"));
+                Alarmas.programar(c, o, Alarmas.claveDe(o));
             }
             Alarmas.guardar(c, Alarmas.K_ALARMAS, lista);
         } catch (Exception ignored) {}

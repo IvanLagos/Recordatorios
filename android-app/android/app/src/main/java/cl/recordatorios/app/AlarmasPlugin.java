@@ -35,7 +35,7 @@ public class AlarmasPlugin extends Plugin {
             JSONArray viejas = Alarmas.leer(c, Alarmas.K_ALARMAS);
             for (int i = 0; i < viejas.length(); i++) {
                 JSONObject o = viejas.getJSONObject(i);
-                Alarmas.cancelar(c, o, o.optString("id"));
+                Alarmas.cancelar(c, o, Alarmas.claveDe(o));
             }
             // Programa las nuevas
             JSArray nuevas = call.getArray("alarmas", new JSArray());
@@ -43,7 +43,7 @@ public class AlarmasPlugin extends Plugin {
             for (int i = 0; i < nuevas.length(); i++) {
                 JSONObject o = nuevas.getJSONObject(i);
                 guardar.put(o);
-                Alarmas.programar(c, o, o.optString("id"));
+                Alarmas.programar(c, o, Alarmas.claveDe(o));
             }
             Alarmas.guardar(c, Alarmas.K_ALARMAS, guardar);
             JSObject r = new JSObject();
@@ -52,6 +52,16 @@ public class AlarmasPlugin extends Plugin {
         } catch (Exception e) {
             call.reject(e.getMessage());
         }
+    }
+
+    /** Guarda la sesión para que la pantalla de alerta pueda hablar con el servidor aunque la app esté cerrada. */
+    @PluginMethod
+    public void sesion(PluginCall call) {
+        Alarmas.prefs(getContext()).edit()
+                .putString("token", call.getString("token", ""))
+                .putString("base", call.getString("base", ""))
+                .apply();
+        call.resolve();
     }
 
     /** Lo que el usuario eligió en la pantalla de alerta mientras la app estaba cerrada. */

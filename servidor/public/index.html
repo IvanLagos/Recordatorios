@@ -158,6 +158,8 @@ const pad=n=>String(n).padStart(2,'0');
 const toLocalInput=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 const fmt=ts=>new Date(ts).toLocaleString('es-CL',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 const REP={none:'',daily:'🔁 cada día',weekly:'🔁 cada semana',monthly:'🔁 cada mes'};
+// Hora a la que le toca avisar: la de posponer si está pospuesto, o la normal
+const effT=i=>(i.snooze>i.due?i.snooze:i.due);
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function nextDue(ts,rep){
   const d=new Date(ts);
@@ -185,12 +187,27 @@ function programarNativo(){
   if(!NATIVE)return;
   clearTimeout(progT);
   progT=setTimeout(()=>{
-    const alarmas=live().filter(i=>!i.done).map(i=>({
-      id:i.id,title:i.title,note:i.note||'',repeat:i.repeat,
-      due:(i.repeat!=='none'&&i.due<=Date.now())?nextDue(i.due,i.repeat):i.due
-    })).filter(a=>a.due>Date.now()).sort((a,b)=>a.due-b.due).slice(0,60);
-    Alarmas.programar({alarmas}).catch(()=>{});
+    const alarmas=[];
+    for(const i of live().filter(i=>!i.done)){
+      const base={id:i.id,title:i.title,note:i.note||''};
+      const d=(i.repeat!=='none'&&i.due<=Date.now())?nextDue(i.due,i.repeat):i.due;
+      if(d>Date.now())alarmas.push({...base,repeat:i.repeat,due:d,clave:i.id});
+      // Pospuesto: una alarma aparte a la hora elegida, sin cambiar el calendario normal
+      if(i.snooze>Date.now())alarmas.push({...base,repeat:'none',due:i.snooze,clave:i.id+'#p'});
+    }
+    alarmas.sort((a,b)=>a.due-b.due);
+    Alarmas.programar({alarmas:alarmas.slice(0,80)}).catch(()=>{});
   },300);
+}
+// Hecho / Posponer: se aplican igual en todos los aparatos (se guardan en el servidor)
+function aplicarAccion(it,tipo,hasta){
+  if(tipo==='hecho'){
+    if(it.repeat!=='none')it.due=nextDue(it.due,it.repeat);else it.done=true;
+    it.snooze=0;
+  }else if(tipo==='posponer'){
+    it.snooze=hasta||Date.now()+10*60000;
+  }else return;
+  touch(it);
 }
 // Lo que elegiste (Hecho / Posponer) en la pantalla de alerta con la app cerrada
 async function aplicarAcciones(){
@@ -200,9 +217,7 @@ async function aplicarAcciones(){
     if(!l.length)return;
     for(const a of l){
       const it=items.find(i=>i.id===a.id);if(!it)continue;
-      if(a.tipo==='hecho'){if(it.repeat!=='none')it.due=nextDue(it.due,it.repeat);else it.done=true}
-      else if(a.tipo==='posponer'&&it.repeat==='none')it.due=a.due;
-      touch(it);
+      aplicarAccion(it,a.tipo,a.due);
     }
     await Alarmas.limpiarAcciones();render();
   }catch(e){}
@@ -253,7 +268,7 @@ async function sync(){
     }
     items=items.filter(i=>!(i.deleted&&!i.dirty));
     // En un aparato nuevo, lo que ya estaba vencido no se vuelve a avisar
-    if(primera)for(const i of live())if(!i.done&&i.due<=Date.now())fired[i.id]=i.due;
+    if(primera)for(const i of live())if(!i.done&&effT(i)<=Date.now())fired[i.id]=effT(i);
     ls.set('rec.since',String(since));ls.set('rec.synced','1');saveFired();save();
     estado('● sincronizado');
     programarNativo();
@@ -276,9 +291,12 @@ function mostrarLogin(){$('login').hidden=false;$('app').hidden=true}
 function iniciar(){
   $('login').hidden=true;$('app').hidden=false;
   resetForm();render();sync();conectarEventos();
+  // La pantalla de alerta del celular usa la sesión para aplicar Hecho/Posponer directo en el servidor
+  if(NATIVE)Alarmas.sesion({token,base:BASE}).catch(()=>{});
   programarNativo();aplicarAcciones();estadoNativo();
 }
 function logout(){
+  if(NATIVE)Alarmas.sesion({token:'',base:''}).catch(()=>{});
   token=null;ls.del('rec.token');ls.del('rec.since');ls.del('rec.synced');ls.del('rec.items');ls.del('rec.fired');
   items=[];fired={};since=0;if(es)es.close();mostrarLogin();
 }
@@ -314,7 +332,7 @@ function renderCal(){
   for(let k=0;k<offset;k++)h+='<div class="day blank"></div>';
   for(let d=1;d<=n;d++){
     const key=vy+'-'+vm+'-'+d,list=map[key]||[];
-    const dots=list.slice(0,3).map(i=>`<span class="dot ${i.done?'ok':i.due<=Date.now()?'late':''}"></span>`).join('');
+    const dots=list.slice(0,3).map(i=>`<span class="dot ${i.done?'ok':effT(i)<=Date.now()?'late':''}"></span>`).join('');
     h+=`<button type="button" class="day ${key===today?'today':''} ${key===selKey?'sel':''}" data-day="${key}">${d}<span class="dots">${dots}</span></button>`;
   }
   $('cal').innerHTML=h;
@@ -328,13 +346,14 @@ function render(){
   const done=live().filter(i=>i.done&&inSel(i)).sort((a,b)=>b.due-a.due);
   const selTxt=selKey?(()=>{const [y,m,d]=selKey.split('-');return new Date(y,m,d).toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})})():'';
   const row=i=>{
-    const late=!i.done&&i.due<=Date.now();
+    const late=!i.done&&effT(i)<=Date.now();
+    const pospuesto=!i.done&&i.snooze>Date.now();
     return `<div class="item ${i.done?'done':''} ${late?'late':''}" data-id="${i.id}">
       <input type="checkbox" ${i.done?'checked':''} data-act="done" title="Marcar como hecho">
       <div class="body" data-act="edit">
         <div class="t">${esc(i.title)}</div>
         ${i.note?`<div class="m">${esc(i.note)}</div>`:''}
-        <div class="m when">${late?'⏰ Vencido · ':''}${fmt(i.due)} ${REP[i.repeat]?'· '+REP[i.repeat]:''}</div>
+        <div class="m when">${late?'⏰ Vencido · ':''}${fmt(i.due)} ${REP[i.repeat]?'· '+REP[i.repeat]:''}${pospuesto?' · ⏳ pospuesto hasta '+new Date(i.snooze).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}):''}</div>
       </div>
       <button class="del" data-act="del" title="Eliminar">✕</button>
     </div>`};
@@ -352,9 +371,18 @@ function beep(){
     [0,.25,.5].forEach(o=>{const s=c.createOscillator(),g=c.createGain();s.connect(g);g.connect(c.destination);
       s.frequency.value=880;g.gain.value=.15;s.start(c.currentTime+o);s.stop(c.currentTime+o+.15)})}catch(e){}
 }
+const alertados={}; // alertas de Windows abiertas: {id: hora}
+// Si en otro aparato ya lo marcaron Hecho o lo pospusieron, esta alerta se cierra sola
+function revisarAlertas(){
+  if(!window.electronAPI)return;
+  for(const id of Object.keys(alertados)){
+    const it=items.find(i=>i.id===id);
+    if(!it||it.deleted||it.done||effT(it)>Date.now()+2000){delete alertados[id];electronAPI.cancelarAlerta(id)}
+  }
+}
 async function notify(i){
   // En la app de Windows la alerta se abre al frente de todo (con su propio sonido)
-  if(window.electronAPI){electronAPI.alerta({id:i.id,title:i.title,note:i.note,due:i.due});return}
+  if(window.electronAPI){alertados[i.id]=effT(i);electronAPI.alerta({id:i.id,title:i.title,note:i.note,due:effT(i)});return}
   if(NATIVE)return; // en el celular avisa la alarma del sistema (pantalla completa)
   toast('🔔 '+i.title);beep();
   if('Notification' in window&&Notification.permission==='granted'){
@@ -368,10 +396,12 @@ function check(){
   if(!token)return;
   for(const i of live()){
     if(i.done)continue;
-    if(i.due<=Date.now()&&fired[i.id]!==i.due){fired[i.id]=i.due;saveFired();notify(i)}
+    const t=effT(i);
+    if(t<=Date.now()&&fired[i.id]!==t){fired[i.id]=t;saveFired();notify(i)}
     // Los repetitivos pasan solos a la siguiente fecha si llevan más de 12 h vencidos
     if(i.repeat!=='none'&&i.due<Date.now()-12*3600000){i.due=nextDue(i.due,i.repeat);touch(i)}
   }
+  revisarAlertas();
   render();
 }
 
@@ -389,7 +419,7 @@ function setDay(key){
 $('f').addEventListener('submit',e=>{
   e.preventDefault();
   const due=new Date($('due').value).getTime();
-  const data={title:$('title').value.trim(),note:$('note').value.trim(),due,repeat:$('rep').value};
+  const data={title:$('title').value.trim(),note:$('note').value.trim(),due,repeat:$('rep').value,snooze:0};
   if(!data.title||isNaN(due))return;
   let it;
   if(editId){it=items.find(i=>i.id===editId);Object.assign(it,data)}
@@ -423,6 +453,7 @@ document.addEventListener('change',e=>{
   const it=items.find(i=>i.id===e.target.closest('.item').dataset.id);if(!it)return;
   if(it.repeat!=='none'&&e.target.checked){it.due=nextDue(it.due,it.repeat)} // repetitivo: pasa a la próxima fecha
   else it.done=e.target.checked;
+  it.snooze=0;
   touch(it);render();
 });
 
@@ -433,10 +464,8 @@ addEventListener('scroll',()=>$('up').classList.toggle('show',scrollY>300),{pass
 // Botones de la alerta de la app de Windows
 if(window.electronAPI)electronAPI.onAccion(({id,tipo})=>{
   const it=items.find(i=>i.id===id);if(!it)return;
-  if(tipo==='hecho'){if(it.repeat!=='none')it.due=nextDue(it.due,it.repeat);else it.done=true}
-  else if(tipo==='posponer')it.due=Date.now()+10*60000;
-  else return;
-  touch(it);render();
+  delete alertados[id];
+  aplicarAccion(it,tipo);render();
 });
 
 // ---------- Permiso de notificaciones ----------
