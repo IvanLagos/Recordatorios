@@ -80,6 +80,10 @@ ipcMain.on('accion', (_e, a) => {
 
 app.on('second-instance', mostrarPrincipal);
 app.whenReady().then(() => {
+  // La primera vez se activa "Iniciar con Windows" para que siga avisando tras reiniciar el PC
+  // (se puede desactivar con clic derecho en el ícono de la bandeja)
+  const marca = path.join(app.getPath('userData'), 'inicio-automatico.txt');
+  if (!fs.existsSync(marca)) { fijarInicio(true); try { fs.writeFileSync(marca, '1'); } catch (e) {} }
   crearVentana(process.argv.includes('--oculto'));
   crearBandeja();
 });
