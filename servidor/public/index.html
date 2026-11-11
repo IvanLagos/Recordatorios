@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recordatorios</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<meta name="theme-color" content="#2563eb">
+<style>
+  :root{--bg:#f3f5f9;--card:#fff;--txt:#1b2230;--mut:#6b7488;--pri:#2563eb;--bad:#dc2626;--ok:#16a34a;--bd:#e3e7ef}
+  @media (prefers-color-scheme:dark){:root{--bg:#10131a;--card:#1a1f2b;--txt:#e8ecf4;--mut:#8b94a8;--bd:#2a3140}}
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.4 system-ui,Segoe UI,sans-serif}
+  main{max-width:640px;margin:0 auto;padding:16px}
+  h1{font-size:1.5rem;margin:8px 0 16px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .top{display:flex;gap:6px;align-items:center}
+  #st{font-size:.75rem;color:var(--mut)}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:16px}
+  form{display:grid;gap:10px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  input,select,textarea,button{font:inherit;color:inherit}
+  input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--bg)}
+  label{font-size:.8rem;color:var(--mut)}
+  button{cursor:pointer;border:0;border-radius:10px;padding:10px 14px;background:var(--pri);color:#fff;font-weight:600}
+  button.sec{background:transparent;color:var(--mut);border:1px solid var(--bd)}
+  button.sm{padding:6px 10px;font-size:.85rem}
+  .actions{display:flex;gap:8px}
+  .actions button:first-child{flex:1}
+  h2{font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:20px 0 8px}
+  .item{display:flex;gap:10px;align-items:flex-start;padding:12px;background:var(--card);border:1px solid var(--bd);border-radius:12px;margin-bottom:8px}
+  .item.late{border-color:var(--bad)}
+  .item input[type=checkbox]{width:22px;height:22px;margin-top:2px;accent-color:var(--ok)}
+  .body{flex:1;min-width:0;cursor:pointer}
+  .t{font-weight:600;word-break:break-word}
+  .done .t{text-decoration:line-through;color:var(--mut)}
+  .m{font-size:.85rem;color:var(--mut)}
+  .late .m.when{color:var(--bad);font-weight:600}
+  .del{background:transparent;color:var(--mut);padding:4px 8px;font-size:1.1rem}
+  .empty{color:var(--mut);text-align:center;padding:20px}
+  .cal-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+  .cal-h b{text-transform:capitalize;font-size:1.1rem}
+  .cal-h div{display:flex;gap:6px}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .wd{text-align:center;font-size:.75rem;color:var(--mut);padding:4px 0}
+  .day{background:var(--bg);color:var(--txt);border:1px solid transparent;border-radius:10px;padding:6px 0;min-height:52px;display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:500}
+  .day.blank{background:transparent;cursor:default}
+  .day.today{border-color:var(--pri);color:var(--pri);font-weight:700}
+  .day.sel{background:var(--pri);color:#fff}
+  .dots{display:flex;gap:3px;min-height:7px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--pri)}
+  .dot.late{background:var(--bad)}.dot.ok{background:var(--ok)}
+  .sel .dot{background:#fff}.sel .dot.late{background:#fecaca}
+  #up{position:fixed;right:16px;bottom:20px;width:46px;height:46px;border-radius:50%;padding:0;font-size:1.4rem;line-height:1;box-shadow:0 4px 14px #0004;z-index:8;opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .2s,transform .2s}
+  #up.show{opacity:1;pointer-events:auto;transform:none}
+  #login{max-width:380px;margin:12vh auto 0}
+  #loginErr{color:var(--bad);font-size:.9rem;min-height:1.2em}
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--pri);color:#fff;padding:12px 18px;border-radius:12px;display:none;max-width:90%;box-shadow:0 6px 20px #0005;z-index:9}
+</style>
+</head>
+<body>
+<main id="login" hidden>
+  <h1>Recordatorios</h1>
+  <form id="lf" class="card">
+    <div><label for="em">Correo</label><input id="em" type="email" required autocomplete="username"></div>
+    <div><label for="pw">Contraseña</label><input id="pw" type="password" required minlength="8" autocomplete="current-password"></div>
+    <div id="loginErr"></div>
+    <div class="actions">
+      <button id="lbtn" type="submit">Entrar</button>
+      <button type="button" class="sec" id="lmode">Crear cuenta</button>
+    </div>
+  </form>
+</main>
+
+<main id="app" hidden>
+  <h1>Recordatorios
+    <span class="top"><span id="st"></span><button class="sec sm" id="perm" hidden>Activar avisos</button><button class="sec sm" id="out">Salir</button></span>
+  </h1>
+
+  <div class="card">
+    <div class="cal-h">
+      <b id="calTitle"></b>
+      <div>
+        <button type="button" class="sec sm" id="calPrev" title="Mes anterior">‹</button>
+        <button type="button" class="sec sm" id="calToday">Hoy</button>
+        <button type="button" class="sec sm" id="calNext" title="Mes siguiente">›</button>
+      </div>
+    </div>
+    <div class="grid" id="cal"></div>
+  </div>
+
+  <form id="f" class="card">
+    <div><label for="title">¿Qué quieres recordar?</label>
+      <input id="title" required maxlength="120" placeholder="Ej: Llamar al cliente"></div>
+    <div><label for="note">Nota (opcional)</label>
+      <textarea id="note" rows="2" maxlength="300"></textarea></div>
+    <div class="row">
+      <div><label for="due">Fecha y hora</label><input id="due" type="datetime-local" required></div>
+      <div><label for="rep">Repetir</label>
+        <select id="rep">
+          <option value="none">No repetir</option>
+          <option value="daily">Cada día</option>
+          <option value="weekly">Cada semana</option>
+          <option value="monthly">Cada mes</option>
+        </select></div>
+    </div>
+    <div class="actions">
+      <button id="save" type="submit">Agregar recordatorio</button>
+      <button type="button" class="sec" id="cancel" hidden>Cancelar</button>
+    </div>
+  </form>
+
+  <div id="lista" style="min-height:75vh">
+    <div id="pend"></div>
+    <div id="doneWrap"></div>
+  </div>
+</main>
+<button id="up" type="button" title="Volver arriba" aria-label="Volver arriba">↑</button>
+<div id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},del:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+const jget=(k,d)=>{try{return JSON.parse(ls.get(k))??d}catch(e){return d}};
+
+// ---------- Estado ----------
+let items=jget('rec.items',[]);          // incluye borrados pendientes de sincronizar
+let fired=jget('rec.fired',{});           // avisos ya mostrados EN ESTE aparato: {id: due}
+let token=ls.get('rec.token');
+let since=+ls.get('rec.since')||0;
+const CID=ls.get('rec.cid')||(()=>{const c=Math.random().toString(36).slice(2,10);ls.set('rec.cid',c);return c})();
+let editId=null,syncing=false,again=false,es=null;
+const save=()=>ls.set('rec.items',JSON.stringify(items));
+const saveFired=()=>ls.set('rec.fired',JSON.stringify(fired));
+const live=()=>items.filter(i=>!i.deleted);
+
+// ---------- Utilidades ----------
+const pad=n=>String(n).padStart(2,'0');
+const toLocalInput=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const fmt=ts=>new Date(ts).toLocaleString('es-CL',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const REP={none:'',daily:'🔁 cada día',weekly:'🔁 cada semana',monthly:'🔁 cada mes'};
+const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function nextDue(ts,rep){
+  const d=new Date(ts);
+  do{
+    if(rep==='daily')d.setDate(d.getDate()+1);
+    else if(rep==='weekly')d.setDate(d.getDate()+7);
+    else d.setMonth(d.getMonth()+1);
+  }while(d.getTime()<=Date.now());
+  return d.getTime();
+}
+
+// ---------- Servidor ----------
+async function api(path,opts={}){
+  const r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','x-cliente':CID,...(token?{Authorization:'Bearer '+token}:{}),...opts.headers}});
+  if(r.status===401&&token&&!path.includes('/login')){logout();throw new Error('sesion');}
+  return r;
+}
+function estado(t){$('st').textContent=t}
+
+function touch(i){i.updatedAt=Date.now();i.dirty=true;save();sync()}
+
+async function sync(){
+  if(!token)return;
+  if(syncing){again=true;return}
+  syncing=true;
+  try{
+    // 1) Subir cambios locales
+    for(const i of items.filter(x=>x.dirty)){
+      const snap=i.updatedAt;
+      const r=await api('/api/recordatorios/'+i.id,{method:'PUT',body:JSON.stringify(i)});
+      if(!r.ok)continue;
+      if(i.updatedAt===snap){const s=await r.json();Object.assign(i,s);delete i.dirty}
+    }
+    // 2) Bajar cambios de otros aparatos
+    const primera=!ls.get('rec.synced');
+    const r=await api('/api/recordatorios?desde='+since);
+    if(!r.ok)throw new Error('http');
+    const d=await r.json();
+    for(const s of d.items){
+      const l=items.find(x=>x.id===s.id);
+      if(!l){if(!s.deleted)items.push(s)}
+      else if(!l.dirty&&s.updatedAt>l.updatedAt)Object.assign(l,s);
+      since=Math.max(since,s.updatedAt);
+    }
+    items=items.filter(i=>!(i.deleted&&!i.dirty));
+    // En un aparato nuevo, lo que ya estaba vencido no se vuelve a avisar
+    if(primera)for(const i of live())if(!i.done&&i.due<=Date.now())fired[i.id]=i.due;
+    ls.set('rec.since',String(since));ls.set('rec.synced','1');saveFired();save();
+    estado('● sincronizado');
+  }catch(e){if(e.message!=='sesion')estado('○ sin conexión')}
+  syncing=false;
+  if(again){again=false;sync()}else check();
+}
+
+function conectarEventos(){
+  if(es)es.close();
+  es=new EventSource('/api/eventos?token='+encodeURIComponent(token));
+  es.onmessage=e=>{if(e.data!==CID)sync()};
+  es.onerror=()=>estado('○ sin conexión');
+  es.onopen=()=>sync();
+}
+
+// ---------- Sesión ----------
+let modoRegistro=false;
+function mostrarLogin(){$('login').hidden=false;$('app').hidden=true}
+function iniciar(){
+  $('login').hidden=true;$('app').hidden=false;
+  resetForm();render();sync();conectarEventos();
+}
+function logout(){
+  token=null;ls.del('rec.token');ls.del('rec.since');ls.del('rec.synced');ls.del('rec.items');ls.del('rec.fired');
+  items=[];fired={};since=0;if(es)es.close();mostrarLogin();
+}
+$('out').onclick=()=>{if(confirm('¿Cerrar sesión en este aparato?'))logout()};
+$('lmode').onclick=()=>{
+  modoRegistro=!modoRegistro;
+  $('lbtn').textContent=modoRegistro?'Crear cuenta':'Entrar';
+  $('lmode').textContent=modoRegistro?'Ya tengo cuenta':'Crear cuenta';
+  $('pw').autocomplete=modoRegistro?'new-password':'current-password';
+};
+$('lf').addEventListener('submit',async e=>{
+  e.preventDefault();$('loginErr').textContent='';
+  try{
+    const r=await fetch(modoRegistro?'/api/registro':'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:$('em').value,password:$('pw').value})});
+    const d=await r.json();
+    if(!r.ok){$('loginErr').textContent=d.error||'Error';return}
+    token=d.token;ls.set('rec.token',token);$('pw').value='';iniciar();
+  }catch(err){$('loginErr').textContent='No hay conexión con el servidor.'}
+});
+
+// ---------- Calendario ----------
+const now0=new Date();
+let vy=now0.getFullYear(),vm=now0.getMonth(),selKey=null;
+const keyOf=ts=>{const d=new Date(ts);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()};
+const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function renderCal(){
+  $('calTitle').textContent=MESES[vm]+' '+vy;
+  const map={};
+  for(const i of live()){(map[keyOf(i.due)]??=[]).push(i)}
+  const offset=(new Date(vy,vm,1).getDay()+6)%7,n=new Date(vy,vm+1,0).getDate(),today=keyOf(Date.now());
+  let h=['L','M','M','J','V','S','D'].map(w=>`<div class="wd">${w}</div>`).join('');
+  for(let k=0;k<offset;k++)h+='<div class="day blank"></div>';
+  for(let d=1;d<=n;d++){
+    const key=vy+'-'+vm+'-'+d,list=map[key]||[];
+    const dots=list.slice(0,3).map(i=>`<span class="dot ${i.done?'ok':i.due<=Date.now()?'late':''}"></span>`).join('');
+    h+=`<button type="button" class="day ${key===today?'today':''} ${key===selKey?'sel':''}" data-day="${key}">${d}<span class="dots">${dots}</span></button>`;
+  }
+  $('cal').innerHTML=h;
+}
+
+function render(){
+  if($('app').hidden)return;
+  renderCal();
+  const inSel=i=>!selKey||keyOf(i.due)===selKey;
+  const pend=live().filter(i=>!i.done&&inSel(i)).sort((a,b)=>a.due-b.due);
+  const done=live().filter(i=>i.done&&inSel(i)).sort((a,b)=>b.due-a.due);
+  const selTxt=selKey?(()=>{const [y,m,d]=selKey.split('-');return new Date(y,m,d).toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'})})():'';
+  const row=i=>{
+    const late=!i.done&&i.due<=Date.now();
+    return `<div class="item ${i.done?'done':''} ${late?'late':''}" data-id="${i.id}">
+      <input type="checkbox" ${i.done?'checked':''} data-act="done" title="Marcar como hecho">
+      <div class="body" data-act="edit">
+        <div class="t">${esc(i.title)}</div>
+        ${i.note?`<div class="m">${esc(i.note)}</div>`:''}
+        <div class="m when">${late?'⏰ Vencido · ':''}${fmt(i.due)} ${REP[i.repeat]?'· '+REP[i.repeat]:''}</div>
+      </div>
+      <button class="del" data-act="del" title="Eliminar">✕</button>
+    </div>`};
+  $('pend').innerHTML=(selKey?'<h2 style="display:flex;justify-content:space-between;align-items:center">'+selTxt+' <button class="sec sm" id="all">Ver todos</button></h2>':'')+'<h2>Pendientes ('+pend.length+')</h2>'+(pend.length?pend.map(row).join(''):'<div class="empty">'+(selKey?'Nada pendiente este día':'No tienes recordatorios pendientes 🎉')+'</div>');
+  $('doneWrap').innerHTML=done.length?'<h2>Completados ('+done.length+')</h2>'+done.map(row).join('')+'<button class="sec sm" id="clr">Borrar completados</button>':'';
+}
+
+// ---------- Avisos ----------
+function toast(msg){
+  const t=$('toast');t.textContent=msg;t.style.display='block';
+  clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',8000);
+}
+function beep(){
+  try{const c=new (window.AudioContext||window.webkitAudioContext)();
+    [0,.25,.5].forEach(o=>{const s=c.createOscillator(),g=c.createGain();s.connect(g);g.connect(c.destination);
+      s.frequency.value=880;g.gain.value=.15;s.start(c.currentTime+o);s.stop(c.currentTime+o+.15)})}catch(e){}
+}
+async function notify(i){
+  // En la app de Windows la alerta se abre al frente de todo (con su propio sonido)
+  if(window.electronAPI){electronAPI.alerta({id:i.id,title:i.title,note:i.note,due:i.due});return}
+  toast('🔔 '+i.title);beep();
+  if('Notification' in window&&Notification.permission==='granted'){
+    const opts={body:i.note||fmt(i.due),icon:'icon.svg',tag:i.id,requireInteraction:true};
+    try{const reg=await navigator.serviceWorker?.getRegistration();
+      if(reg)reg.showNotification('🔔 '+i.title,opts);else new Notification('🔔 '+i.title,opts)}
+    catch(e){try{new Notification('🔔 '+i.title,opts)}catch(_){}}
+  }
+}
+function check(){
+  if(!token)return;
+  for(const i of live()){
+    if(i.done)continue;
+    if(i.due<=Date.now()&&fired[i.id]!==i.due){fired[i.id]=i.due;saveFired();notify(i)}
+    // Los repetitivos pasan solos a la siguiente fecha si llevan más de 12 h vencidos
+    if(i.repeat!=='none'&&i.due<Date.now()-12*3600000){i.due=nextDue(i.due,i.repeat);touch(i)}
+  }
+  render();
+}
+
+// ---------- Formulario ----------
+function resetForm(){
+  editId=null;$('f').reset();$('save').textContent='Agregar recordatorio';$('cancel').hidden=true;
+  $('due').value=toLocalInput(Date.now()+3600000);
+}
+function setDay(key){
+  if(editId)return;
+  const [y,m,d]=key.split('-').map(Number);
+  const t=($('due').value.split('T')[1])||'09:00';
+  $('due').value=`${y}-${pad(m+1)}-${pad(d)}T${t}`;
+}
+$('f').addEventListener('submit',e=>{
+  e.preventDefault();
+  const due=new Date($('due').value).getTime();
+  const data={title:$('title').value.trim(),note:$('note').value.trim(),due,repeat:$('rep').value};
+  if(!data.title||isNaN(due))return;
+  let it;
+  if(editId){it=items.find(i=>i.id===editId);Object.assign(it,data)}
+  else{it={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),done:false,deleted:false,...data};items.push(it)}
+  touch(it);resetForm();
+  const sd=new Date(due);vy=sd.getFullYear();vm=sd.getMonth();selKey=keyOf(due);
+  $('due').value=toLocalInput(due);
+  check();
+});
+$('cancel').onclick=resetForm;
+
+document.addEventListener('click',e=>{
+  const id0=e.target.id;
+  if(id0==='calPrev'||id0==='calNext'){vm+=id0==='calNext'?1:-1;if(vm<0){vm=11;vy--}if(vm>11){vm=0;vy++}render();return}
+  if(id0==='up'){scrollTo({top:0,behavior:'smooth'});return}
+  if(id0==='calToday'){const t=new Date();vy=t.getFullYear();vm=t.getMonth();selKey=keyOf(t);setDay(selKey);render();irALista();return}
+  if(id0==='all'){selKey=null;render();return}
+  const dc=e.target.closest('[data-day]');
+  if(dc){selKey=selKey===dc.dataset.day?null:dc.dataset.day;if(selKey)setDay(selKey);render();if(selKey)irALista();return}
+  if(id0==='clr'){live().filter(i=>i.done).forEach(i=>{i.deleted=true;i.updatedAt=Date.now();i.dirty=true});save();sync();render();return}
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const it=items.find(i=>i.id===el.closest('.item').dataset.id);if(!it)return;
+  if(el.dataset.act==='del'){it.deleted=true;touch(it);render()}
+  else if(el.dataset.act==='edit'){
+    editId=it.id;$('title').value=it.title;$('note').value=it.note;$('due').value=toLocalInput(it.due);$('rep').value=it.repeat;
+    $('save').textContent='Guardar cambios';$('cancel').hidden=false;scrollTo({top:0,behavior:'smooth'});$('title').focus();
+  }
+});
+document.addEventListener('change',e=>{
+  if(e.target.dataset.act!=='done')return;
+  const it=items.find(i=>i.id===e.target.closest('.item').dataset.id);if(!it)return;
+  if(it.repeat!=='none'&&e.target.checked){it.due=nextDue(it.due,it.repeat)} // repetitivo: pasa a la próxima fecha
+  else it.done=e.target.checked;
+  touch(it);render();
+});
+
+// Baja a los recordatorios del día elegido y muestra la flecha para volver arriba
+function irALista(){$('pend').scrollIntoView({behavior:'smooth',block:'start'})}
+addEventListener('scroll',()=>$('up').classList.toggle('show',scrollY>300),{passive:true});
+
+// Botones de la alerta de la app de Windows
+if(window.electronAPI)electronAPI.onAccion(({id,tipo})=>{
+  const it=items.find(i=>i.id===id);if(!it)return;
+  if(tipo==='hecho'){if(it.repeat!=='none')it.due=nextDue(it.due,it.repeat);else it.done=true}
+  else if(tipo==='posponer')it.due=Date.now()+10*60000;
+  else return;
+  touch(it);render();
+});
+
+// ---------- Permiso de notificaciones ----------
+function permUI(){$('perm').hidden=!('Notification' in window)||Notification.permission!=='default'}
+$('perm').onclick=async()=>{await Notification.requestPermission();permUI()};
+permUI();
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+// ---------- Arranque ----------
+if(token)iniciar();else mostrarLogin();
+setInterval(()=>{check();if(token&&!document.hidden)sync()},10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){check();sync()}});
+</script>
+</body>
+</html>

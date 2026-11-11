@@ -1,0 +1,17 @@
+# Configuración para Render (Blueprint). El servidor guarda los datos en un disco permanente.
+services:
+  - type: web
+    name: recordatorios
+    runtime: node
+    rootDir: servidor
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: starter
+    healthCheckPath: /
+    disk:
+      name: datos
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data

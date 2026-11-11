@@ -1,0 +1,9 @@
+{
+  "name": "recordatorios-windows",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recordatorios para Windows: alerta siempre al frente",
+  "main": "main.js",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "^33.2.0" }
+}
